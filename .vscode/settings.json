@@ -1,0 +1,6 @@
+{
+    "yaml.schemas": {
+        "kubernetes": "*.yaml",
+        "https://json.schemastore.org/yamllint.json": "file:///Users/andrewcichewicz/repos/scratch/sqlc.yaml"
+    }
+}
