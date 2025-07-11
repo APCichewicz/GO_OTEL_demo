@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 
+	"github.com/joho/godotenv"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -19,29 +21,44 @@ import (
 
 var tracer trace.Tracer
 
-func newExporter(ctx context.Context) *stdouttrace.Exporter {
-	exporter, err := stdouttrace.New(
-		stdouttrace.WithPrettyPrint(),
-	)
-	if err != nil {
-		log.Fatal(err)
+func init() {
+	if err := godotenv.Load(".env.example"); err != nil {
+		log.Printf("No .env file found")
 	}
-	return exporter
 }
-func newTracerProvider(exp sdktrace.SpanExporter) *sdktrace.TracerProvider {
+
+func newResource() (*resource.Resource, error) {
 	r, err := resource.Merge(
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceName("scratch"),
+			semconv.ServiceName(os.Getenv("SERVICE_NAME")),
+			semconv.ServiceVersion(os.Getenv("SERVICE_VERSION")),
+			semconv.DeploymentEnvironment(os.Getenv("ENVIRONMENT")),
+			semconv.HostName(os.Getenv("HOSTNAME")),
 		),
 	)
 	if err != nil {
-		panic(err)
+		log.Printf("Failed to create resource: %v", err)
+		return nil, err
 	}
+	return r, nil
+}
+
+func newExporter() (*stdouttrace.Exporter, error) {
+	exporter, err := stdouttrace.New(
+		stdouttrace.WithPrettyPrint(),
+	)
+	if err != nil {
+		log.Printf("Failed to create exporter: %v", err)
+		return nil, err
+	}
+	return exporter, nil
+}
+func newTracerProvider(exp sdktrace.SpanExporter, res *resource.Resource) *sdktrace.TracerProvider {
 	return sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exp),
-		sdktrace.WithResource(r),
+		sdktrace.WithResource(res),
 	)
 }
 
@@ -62,8 +79,15 @@ func main() {
 	queries := database.New(db)
 
 	ctx := context.Background()
-	exp := newExporter(ctx)
-	tp := newTracerProvider(exp)
+	res, err := newResource()
+	if err != nil {
+		log.Fatal("Failed to create resource")
+	}
+	exp, err := newExporter()
+	if err != nil {
+		log.Fatal("Failed to create exporter")
+	}
+	tp := newTracerProvider(exp, res)
 	defer func() { _ = tp.Shutdown(ctx) }()
 	otel.SetTracerProvider(tp)
 
