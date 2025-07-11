@@ -1,0 +1,81 @@
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.login-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+}
+
+.success-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+}
+
+.card {
+  padding: 2em;
+  color: black;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+  background-color: #f9f9f9;
+  margin: 1rem;
+}
+
+.login-button {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  font-size: 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.login-button:hover:not(:disabled) {
+  background-color: #0056b3;
+}
+
+.login-button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+.error {
+  color: #dc3545;
+  margin-top: 1rem;
+}
+
+.token-info {
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  color: black;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-top: 1rem;
+  max-width: 800px;
+  width: 100%;
+}
+
+.session-details {
+  text-align: left;
+  margin-top: 1rem;
+}
+
+.session-details p {
+  margin: 0.5rem 0;
+  word-break: break-all;
+}
+
+.session-details strong {
+  color: #495057;
+}
