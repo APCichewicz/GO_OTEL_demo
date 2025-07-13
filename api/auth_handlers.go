@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/gob"
 	"encoding/json"
@@ -52,12 +53,6 @@ type JWTClaims struct {
 	Email  string `json:"email"`
 	Name   string `json:"name"`
 	jwt.StandardClaims
-}
-
-type JWTConfig struct {
-	JWKSEndpoint string
-	Issuer       string
-	Audience     string
 }
 
 func init() {
@@ -327,27 +322,6 @@ func (s *server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *server) getJWTConfig() *JWTConfig {
-	authentikURL := os.Getenv("AUTHENTIK_URL")
-	appName := os.Getenv("AUTHENTIK_APP_NAME")
-	if appName == "" {
-		appName = "test-auth-app"
-	}
-
-	jwksEndpoint := ""
-	if authentikURL != "" {
-		jwksEndpoint = fmt.Sprintf("%s/application/o/%s/jwks/", authentikURL, appName)
-	}
-
-	issuer := fmt.Sprintf("%s/application/o/%s/", authentikURL, appName)
-
-	return &JWTConfig{
-		JWKSEndpoint: jwksEndpoint,
-		Issuer:       issuer,
-		Audience:     "test-audience",
-	}
-}
-
 func (s *server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, span := s.tracer.Start(r.Context(), "authMiddleware")
@@ -358,6 +332,13 @@ func (s *server) authMiddleware(next http.Handler) http.Handler {
 		if err == nil {
 			userData, ok := session.Values["user"].(SessionData)
 			if ok && time.Now().Before(userData.ExpiresAt) {
+				// Validate the OAuth token stored in session using JWKS
+				_, err := s.validateJWT(userData.Token)
+				if err != nil {
+					fmt.Println("Invalid session token:", err)
+					http.Error(w, "invalid session token", http.StatusUnauthorized)
+					return
+				}
 				ctx := context.WithValue(r.Context(), UserIDContextKey, userData.UserID)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
@@ -378,33 +359,37 @@ func (s *server) authMiddleware(next http.Handler) http.Handler {
 		}
 
 		tokenString := bearerToken[1]
-		claims, err := s.validateJWT(tokenString)
+		_, err = s.validateJWT(tokenString)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Invalid token: %v", err), http.StatusUnauthorized)
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), UserIDContextKey, claims.UserID)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		next.ServeHTTP(w, r)
 	})
 }
 
-func (s *server) validateJWT(tokenString string) (*JWTClaims, error) {
-	config := s.getJWTConfig()
+func (s *server) validateJWT(tokenString string) (*jwt.Token, error) {
+	jwksEndpoint := "https://localhost:9443/application/o/test-auth-app/jwks/"
 
-	if config.JWKSEndpoint == "" {
-		return nil, fmt.Errorf("JWKS endpoint not configured")
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // For development only
+	}
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   10 * time.Second,
 	}
 
-	jwks, err := keyfunc.Get(config.JWKSEndpoint, keyfunc.Options{
+	jwks, err := keyfunc.Get(jwksEndpoint, keyfunc.Options{
 		RefreshInterval: time.Hour,
 		RefreshTimeout:  10 * time.Second,
+		Client:          client,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get JWKS: %w", err)
 	}
 
-	token, err := jwt.ParseWithClaims(tokenString, &JWTClaims{}, jwks.Keyfunc)
+	token, err := jwt.Parse(tokenString, jwks.Keyfunc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse token: %w", err)
 	}
@@ -413,20 +398,7 @@ func (s *server) validateJWT(tokenString string) (*JWTClaims, error) {
 		return nil, fmt.Errorf("invalid token")
 	}
 
-	claims, ok := token.Claims.(*JWTClaims)
-	if !ok {
-		return nil, fmt.Errorf("invalid token claims")
-	}
-
-	if config.Issuer != "" && claims.Issuer != config.Issuer {
-		return nil, fmt.Errorf("invalid issuer")
-	}
-
-	if config.Audience != "" && claims.Audience != config.Audience {
-		return nil, fmt.Errorf("invalid audience")
-	}
-
-	return claims, nil
+	return token, nil
 }
 
 func getUserIDFromContext(ctx context.Context) (int32, bool) {
