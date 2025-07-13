@@ -31,6 +31,8 @@ function App() {
       const response = await fetch(`${API_BASE_URL}/auth/user`, {
         credentials: 'include'
       })
+
+      console.log('Auth status response:', response)
       
       if (response.ok) {
         const data = await response.json()

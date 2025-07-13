@@ -68,13 +68,22 @@ func getEnvBool(key string, defaultValue bool) bool {
 func (s *server) Start() {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /users", s.getUsers)
-	mux.HandleFunc("POST /users", s.createUser)
-
+	// Public routes (no JWT required)
 	mux.HandleFunc("GET /auth/login/{provider}", s.handleLogin)
 	mux.HandleFunc("GET /auth/login/{provider}/callback", s.handleCallback)
 	mux.HandleFunc("POST /auth/logout", s.handleLogout)
-	mux.HandleFunc("GET /auth/user", s.getCurrentUser)
+
+	// Protected routes (JWT required)
+	protectedMux := http.NewServeMux()
+	protectedMux.HandleFunc("GET /users", s.getUsers)
+	protectedMux.HandleFunc("POST /users", s.createUser)
+	// /auth/user
+	protectedMux.HandleFunc("GET /auth/user", s.getCurrentUser)
+
+	// Apply auth middleware to protected routes
+	mux.Handle("/users", s.authMiddleware(protectedMux))
+	mux.Handle("/users/", s.authMiddleware(protectedMux))
+	mux.Handle("/auth/user", s.authMiddleware(protectedMux))
 
 	handler := s.corsMiddleware(mux)
 
